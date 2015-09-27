@@ -1,4 +1,4 @@
-var Int64 = require('../int64'),
+var Int64 = require('../src/int64'),
     chai = require('chai'),
     expect = chai.expect;
 

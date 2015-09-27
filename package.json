@@ -26,6 +26,7 @@
   "readmeFilename": "README.md",
   "dependencies": {
     "bindings": "1.2.x",
+    "lodash": "^3.10.1",
     "nan": "^2.0.8"
   }
 }
