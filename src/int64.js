@@ -36,7 +36,6 @@
 /**
  * Constructor accepts any of the following argument types:
  *
- * new Int64(buffer[, offset=0]) - Existing Buffer with byte offset
  * new Int64(string)             - Hex string (throws if n is outside int64 range)
  * new Int64(number)             - Number (throws if n is outside int64 range)
  * new Int64(hi, lo)             - Raw bits as two 32-bit values
@@ -45,24 +44,9 @@
 
 var _ = require('lodash');
 
-var Int64 = function(a1, offset) {
-  offset= offset || 0;
-  if (a1 instanceof Buffer) {
-    this.storage= new Array(8);
-    this.storage[0]= a1[0+offset];
-    this.storage[1]= a1[1+offset];
-    this.storage[2]= a1[2+offset];
-    this.storage[3]= a1[3+offset];
-    this.storage[4]= a1[4+offset];
-    this.storage[5]= a1[5+offset];
-    this.storage[6]= a1[6+offset];
-    this.storage[7]= a1[7+offset];
-  } else if (a1 instanceof Array) {
-    this.storage = a1.slice(offset,8);
-  } else {
-    this.storage = this.storage || new Array(8);
-    this.setValue.apply(this, arguments);
-  }
+var Int64 = function(a1) {
+  this.storage = this.storage || new Array(8);
+  this.setValue.apply(this, arguments);
 };
 
 
@@ -91,6 +75,7 @@ Int64.prototype = {
     }
   },
 
+  // TODO: make this private
   /**
    * Set the value. Takes any of the following arguments:
    *
@@ -98,42 +83,47 @@ Int64.prototype = {
    * setValue(number) - Number (throws if n is outside int64 range)
    * setValue(hi, lo) - Raw bits as two 32-bit values
    */
-  // setValue: function(hi, lo) {
-  //   var negate = false;
-  //   if (arguments.length == 1) {
-  //     if (typeof(hi) == 'number') {
-  //       // Simplify bitfield retrieval by using abs() value.  We restore sign
-  //       // later
-  //       negate = hi < 0;
-  //       hi = Math.abs(hi);
-  //       lo = hi % 0x80000000;
-  //       hi = hi / 0x80000000;
-  //       if (hi > 0x80000000) throw new RangeError(hi  + ' is outside Int64 range');
-  //       hi = hi | 0;
-  //     } else if (typeof(hi) == 'string') {
-  //       hi = (hi + '').replace(/^0x/, '');
-  //       lo = hi.substr(-8);
-  //       hi = hi.length > 8 ? hi.substr(0, hi.length - 8) : '';
-  //       hi = parseInt(hi, 16);
-  //       lo = parseInt(lo, 16);
-  //     } else {
-  //       throw new Error(hi + ' must be a Number or String');
-  //     }
-  //   }
 
-  //   // Technically we should throw if hi or lo is outside int32 range here, but
-  //   // it's not worth the effort. Anything past the 32'nd bit is ignored.
+  setValue: function(hi, lo) {
+    var negate = false;
+    if (arguments.length == 1) {
+      if (typeof(hi) == 'number') {
+        // Simplify bitfield retrieval by using abs() value.  We restore sign
+        // later
+        negate = hi < 0;
+        hi = Math.abs(hi);
+        lo = hi % 0x80000000;
+        hi = hi / 0x80000000;
+        if (hi > 0x80000000) throw new RangeError(hi  + ' is outside Int64 range');
+        hi = hi | 0;
+      } else if (typeof(hi) == 'string') {
+        var strArgument = hi;
+        if (strArgument[0] === '0' && strArgument[1] == 'x') {
+          hi = (hi + '').replace(/^0x/, '');
+          lo = hi.substr(-8);
+          hi = hi.length > 8 ? hi.substr(0, hi.length - 8) : '';
+          hi = parseInt(hi, 16);
+          lo = parseInt(lo, 16);
+        } else {
+          // number in string
+          // '372528006791240803'
+        };
+      } else {
+        throw new Error(hi + ' must be a Number or String');
+      }
+    }
 
-  //   // Copy bytes to buffer
-  //   var b = this.storage, o = 0;
-  //   for (var i = 7; i >= 0; i--) {
-  //     b[o+i] = lo & 0xff;
-  //     lo = i == 4 ? hi : lo >>> 8;
-  //   }
+    // Technically we should throw if hi or lo is outside int32 range here, but
+    // it's not worth the effort. Anything past the 32'nd bit is ignored.
+    // Copy bytes to buffer
+    for (var i = 7; i >= 0; i--) {
+      this.storage[i] = lo & 0xff;
+      lo = i == 4 ? hi : lo >>> 8;
+    }
 
-  //   // Restore sign of passed argument
-  //   if (negate) this._2scomp();
-  // },
+    // Restore sign of passed argument
+    if (negate) this._2scomp();
+  },
 
   /**
    * Convert to a native JS number.
@@ -150,7 +140,11 @@ Int64.prototype = {
     var b = this.storage, o = 0;
 
     // Running sum of octets, doing a 2's complement
-    var negate = b[0] & 0x80, x = 0, carry = 1;
+    // TODO: fix negate
+    // var negate = b[0] & 0x80,
+    var negate = false,
+        x = 0,
+        carry = 1;
     for (var i = 7, m = 1; i >= 0; i--, m *= 256) {
       var v = b[o+i];
 
@@ -180,39 +174,31 @@ Int64.prototype = {
     return this.toNumber(false);
   },
 
+  low32: function() {
+    this.num & 0xFFFFFFFF
+  },
 
+  high32: function() {
+    // this.storage, o = o, carry = 1;
+    // for (var i = o + 7; i >= o; i--) {
+    //   var v = (b[i] ^ 0xff) + carry;
+    //   b[i] = v & 0xff;
+    //   carry = v >> 8;
+    // }
+
+    // num >> 32
+  },
 
   /**
    * Return string value
    */
   toString: function() {
-    function zeros(len){
-      var retval="";
-      for (var i=0;i<len;++i) { retval+="0"; }
-      return retval;
-    }
-
-    var firstHalf = this.low32().toString(16);
-    var secondHalf = this.high32().toString(16);
-
-    var negate = this.storage[0] & 0x80;
-    var sign = (negate ? "-" : "");
-    return sign + "0x" + zeros(8-firstHalf.length) + firstHalf + zeros(8-secondHalf.length) + secondHalf;
+    var val = this.storage.map(function(b){ return Int64.HexTable[b]; }).join("");
+    // TODO: fix negate ?
+    // var negate = this.storage[0] & 0x80;
+    // var sign = (negate ? "-" : "");
+    return "0x" + val;
   },
-
-  /**
-   * Return a string showing the buffer octets, with MSB on the left.
-   *
-   * @param sep separator string. default is '' (empty string)
-   */
-  // toOctetString: function(sep) {
-  //   var out = new Array(8);
-  //   var b = this.storage, o = 0;
-  //   for (var i = 0; i < 8; i++) {
-  //     out[i] = Int64.HexTable[b[o+i]];
-  //   }
-  //   return out.join(sep || '');
-  // },
 
   /**
    * Returns a number indicating whether this comes before or after or is the
@@ -221,20 +207,21 @@ Int64.prototype = {
    * @param {Int64} other  Other Int64 to compare.
    */
   compare: function(other) {
-    // If sign bits differ ...
-    if ((this.buffer[this.offset] & 0x80) != (other.buffer[other.offset] & 0x80)) {
-      return other.buffer[other.offset] - this.buffer[this.offset];
+    if (!_.isObject(other)) { throw("Object expected"); };
+
+    // If sign bits differ
+    if ((this.storage[0] & 0x80) != (other.storage[0] & 0x80)) {
+      return other.storage[0] - this.storage[0];
     }
 
     // otherwise, compare bytes lexicographically
     for (var i = 0; i < 8; i++) {
-      if (this.buffer[this.offset+i] !== other.buffer[other.offset+i]) {
-        return this.buffer[this.offset+i] - other.buffer[other.offset+i];
+      if (this.storage[i] !== other.storage[i]) {
+        return this.storage[i] - other.storage[i];
       }
     }
     return 0;
   },
-
 
   /**
    * Returns a boolean indicating if this integer is equal to other.
@@ -245,34 +232,88 @@ Int64.prototype = {
     return this.compare(other) === 0;
   },
 
+  // add: function(other) {
+  //   if (_.isNumber(other)) { other = new Int64(other); }
+  //   var out = Array(8);
+  //   for (var i = 7; i >= 0; i--) {
+  //     console.log(this.storage[i].toString(2), other.storage[i].toString(2))
+
+  //   }
+  //   // console.log("ADD", this.storage, other.storage);s
+  //   // boolean add
+  //   // return a new Int64 instance
+  // },
+
+  // sub: function(other) {
+  //   if (_.isNumber(other)) {
+  //     other = new Int64(other);
+  //   }
+
+  //   // boolean sub
+  //   // return a new Int64 instance
+  // },
+
   and: function(other) {
-    console.log("AND", typeof other)
-    return new Int64(this.buffer & other.buffer);
+    if (!_.isObject(other)) { other = new Int64(other); }
+
+    var res = Array(8);
+    for (var i = 7; i >= 0; i--) {
+      res[i] = this.storage[i] & other.storage[i];
+    }
+
+    // TODO: fix negate ?
+    var asHexa = "0x" + res.map(function(b){ return Int64.HexTable[b]; }).join("");
+    return new Int64(asHexa);
+  },
+
+  or: function(other) {
+    if (!_.isObject(other)) { other = new Int64(other); }
+    console.log(".............")
+    var res = Array(8);
+    for (var i = 7; i >= 0; i--) {
+      res[i] = this.storage[i] | other.storage[i];
+      console.log(res[i].toString(2) + "=" + this.storage[i].toString(2) + "|" + other.storage[i].toString(2))
+    }
+
+    // TODO: fix negate ?
+    var asHexa = "0x" + res.map(function(b){ return Int64.HexTable[b]; }).join("");
+
+    console.log(".............")
+    return new Int64(asHexa);
+
+  },
+
+  xor: function(other) {
+    if (!_.isObject(other)) { other = new Int64(other); }
+
+    var res = Array(8);
+    for (var i = 7; i >= 0; i--) {
+      res[i] = this.storage[i] ^ other.storage[i];
+    }
+
+    // TODO: fix negate ?
+    var asHexa = "0x" + res.map(function(b){ return Int64.HexTable[b]; }).join("");
+    return new Int64(asHexa);
   },
 
   shiftLeft: function(shiftBy) {
-    return new Int64(this.buffer << shiftBy);
+    var buff = "";
+    for (var i = 7; i >= 0; i--) { buff += this.storage[i].toString(2); }
+
+    function zeros(len){
+      var retval="";
+      for (var i=0;i<len;++i) { retval+="0"; }
+      return retval;
+    }
+
+    var result = _.trunc((buff + zeros(shiftBy)), 64);
+
+    // var asHexa = "0x" + res.map(function(b){ return Int64.HexTable[b]; }).join("");
   },
 
-  shiftRight: function() {
-    return new Int64(this.buffer >> shiftBy);
-  },
-
-  low32: function() {
-    //  num & 0xFFFFFFFF.
-  },
-
-  high32: function() {
-    // num >> 32
-  },
-
-  // xor: function(other) {
-  //   return new Int64((this.buffer ^ other.buffer))
-  // },
-
-  // or: function(other) {
-  //   return new Int64((this.buffer  | other));
-  // }
+  shiftRight: function(shiftBy) {
+    return new Int64(this.storage >> shiftBy);
+  }
 
 };
 
